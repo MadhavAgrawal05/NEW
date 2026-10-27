@@ -9,8 +9,49 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 RetailIQ")
-st.caption("Intelligent Retail Analytics & DSA Optimization Platform")
+
+
+
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+    }
+
+[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #172554, #1e3a5f);
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid #334155;
+    min-width: 0;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: clamp(16px, 1.5vw, 25px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricValue"] {
+        color: white;
+    }
+
+    h1, h2, h3 {
+        font-weight: 700;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+
+
+
+
+
+st.title("📊 SmartRetail: Retail Analytics and DSA-Based Optimization Platform")
 
 # ---------------- LOAD DATASET ----------------
 DATA_FILE = "store_sales_data (2).csv"
@@ -30,6 +71,8 @@ except Exception as e:
         "aur app.py same folder mein hain."
     )
     st.stop()
+
+raw_df = df.copy(deep=True)
 
 # ---------------- CLEAN COLUMN NAMES ----------------
 df.columns = df.columns.astype(str).str.strip()
@@ -77,8 +120,33 @@ state_col = find_column([
 ])
 
 category_col = find_column([
-    "Category", "Product Category",
-    "Product Type", "Sub Category"
+    "Category",
+    "Product Category",
+    "Category of Goods"
+])
+
+subcategory_col = find_column([
+    "Sub-Category",
+    "Sub Category",
+    "Subcategory",
+    "Product Subcategory",
+    "Product Sub-Category"
+])
+
+stock_col = find_column([
+    "Stock Left",
+    "Remaining Stock",
+    "Available Stock",
+    "Stock Quantity",
+    "Inventory Level",
+    "Current Stock",
+    "Units in Stock"
+])
+
+product_col = find_column([
+    "Product Name",
+    "Product",
+    "Item Name"
 ])
 
 date_col = find_column([
@@ -90,7 +158,9 @@ quantity_col = find_column([
 ])
 
 # ---------------- DATA TYPE CONVERSION ----------------
-for column in [sales_col, profit_col, quantity_col]:
+for column in [
+    sales_col, profit_col, quantity_col, stock_col
+]:
     if column:
         df[column] = pd.to_numeric(
             df[column].astype(str).str.replace(",", "", regex=False),
@@ -103,6 +173,9 @@ if date_col:
         errors="coerce",
         dayfirst=True
     )
+
+
+
 
 # ---------------- SIDEBAR FILTERS ----------------
 st.sidebar.header("🔎 Dashboard Filters")
@@ -253,6 +326,40 @@ st.caption(
     f"out of {len(df):,} total records."
 )
 
+# ---------------- LOW STOCK ALERT ----------------
+with st.expander("⚠️ Low Stock Alert", expanded=False):
+
+    if quantity_col:
+        low_stock_df = filtered_df[
+            filtered_df[quantity_col].notna()
+            & (filtered_df[quantity_col] <= 10)
+        ]
+
+        if low_stock_df.empty:
+            st.success("No low-stock records found.")
+        else:
+            st.warning(
+                f"{len(low_stock_df):,} records have quantity 10 or below."
+            )
+
+            display_cols = [
+                col for col in [
+                    product_col,
+                    category_col,
+                    quantity_col,
+                    state_col
+                ]
+                if col is not None
+            ]
+
+            st.dataframe(
+                low_stock_df[display_cols],
+                use_container_width=True,
+                hide_index=True
+            )
+    else:
+        st.info("Quantity column dataset mein nahi mili.")
+
 # ---------------- SALES BY CATEGORY ----------------
 left, right = st.columns(2)
 
@@ -318,71 +425,155 @@ with right:
             "State ya Profit column identify nahi hui."
         )
 
-# ---------------- MONTHLY SALES TREND ----------------
-st.subheader("📅 Monthly Sales Trend")
+# ---------------- MONTHLY SALES VS PROFIT ----------------
+# ---------------- MONTHLY SALES VS PROFIT ----------------
+st.subheader("📅 Monthly Sales vs Profit")
 
-if date_col and sales_col:
-    trend_df = filtered_df.dropna(subset=[date_col]).copy()
+if date_col and sales_col and profit_col:
+    monthly_df = filtered_df.copy()
+    monthly_df[date_col] = pd.to_datetime(
+        monthly_df[date_col], errors="coerce"
+    )
+    monthly_df = monthly_df.dropna(subset=[date_col])
 
-    if not trend_df.empty:
-        trend_df["Month"] = (
-            trend_df[date_col]
-            .dt.to_period("M")
-            .astype(str)
-        )
+    if not monthly_df.empty:
+        monthly_df["Month"] = monthly_df[date_col].dt.to_period("M").astype(str)
 
-        monthly_sales = (
-            trend_df
-            .groupby("Month", as_index=False)[sales_col]
-            .sum()
-            .sort_values("Month")
-        )
+        monthly_data = monthly_df.groupby("Month")[
+            [sales_col, profit_col]
+        ].sum().reset_index()
 
         fig = px.line(
-            monthly_sales,
+            monthly_data,
             x="Month",
-            y=sales_col,
+            y=[sales_col, profit_col],
             markers=True,
-            title="Monthly Sales Performance",
+            title="Monthly Sales vs Profit",
             labels={
                 "Month": "Month",
-                sales_col: "Sales (₹)"
+                "value": "Amount (₹)",
+                "variable": "Metric"
             }
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        with st.expander("📋 View Monthly Sales & Profit Data", expanded=False):
+            st.dataframe(
+                monthly_data,
+                use_container_width=True,
+                hide_index=True
+            )
     else:
         st.info("Selected filters mein valid dates nahi hain.")
-
 else:
-    st.info(
-        "Sales trend ke liye valid Date aur Sales columns chahiye."
-    )
+    st.info("Monthly Sales vs Profit ke liye date, sales aur profit columns required hain.")
 
 # ---------------- DATASET PREVIEW ----------------
-with st.expander("📋 View Filtered Dataset"):
+with st.expander("📋 View Filtered Dataset", expanded=False):
+
+    st.write(
+        f"Showing {len(filtered_df):,} filtered records "
+        f"out of {len(df):,} total records."
+    )
+
     st.dataframe(
         filtered_df,
-        use_container_width=True
+        use_container_width=True,
+        hide_index=True
     )
 
-# ---------------- DATASET STRUCTURE ----------------
+    st.download_button(
+        label="📥 Download Filtered Dataset (CSV)",
+        data=filtered_df.to_csv(index=False).encode("utf-8"),
+        file_name="retailiq_filtered_dataset.csv",
+        mime="text/csv"
+    )
+# ---------------- DATASET STRUCTURE & DATA QUALITY ----------------
+
 with st.expander("🔍 Dataset Structure & Data Quality", expanded=True):
-    st.write("**Actual Column Names:**")
-    st.write(df.columns.tolist())
 
-    st.write("**Data Types:**")
+    # Basic dataset statistics
+    total_rows = len(df)
+    total_columns = len(df.columns)
+    duplicate_rows = int(df.duplicated().sum())
+    total_missing = int(df.isna().sum().sum())
+
+    st.subheader("📊 Dataset Summary")
+
+    m1, m2, m3, m4 = st.columns(4)
+
+    m1.metric("Total Rows", f"{total_rows:,}")
+    m2.metric("Total Columns", f"{total_columns:,}")
+    m3.metric("Duplicate Rows", f"{duplicate_rows:,}")
+    m4.metric("Missing Values", f"{total_missing:,}")
+
+    st.divider()
+
+    # Column-wise data quality
+    st.subheader("🧹 Column-wise Data Quality")
+
+    quality_df = pd.DataFrame({
+        "Column": df.columns,
+        "Data Type": df.dtypes.astype(str).values,
+        "Missing Values": df.isna().sum().values,
+        "Missing (%)": (
+            df.isna().mean().values * 100
+        ).round(2)
+    })
+
     st.dataframe(
-        pd.DataFrame({
-            "Column": df.columns,
-            "Data Type": df.dtypes.astype(str).values,
-            "Missing Values": df.isnull().sum().values
-        }),
-        use_container_width=True
+        quality_df,
+        use_container_width=True,
+        hide_index=True
     )
 
-    st.write("**Detected Columns:**")
+    # Date quality check
+    st.subheader("📅 Date Quality")
+
+    if date_col:
+        missing_or_invalid_dates = int(
+            df[date_col].isna().sum()
+        )
+
+        valid_dates = df[date_col].dropna()
+
+        d1, d2 = st.columns(2)
+
+        d1.metric(
+            "Missing / Invalid Dates",
+            f"{missing_or_invalid_dates:,}"
+        )
+
+        if not valid_dates.empty:
+            d2.metric(
+                "Valid Dates",
+                f"{len(valid_dates):,}"
+            )
+
+            st.caption(
+                f"Date range: {valid_dates.min():%d-%m-%Y} "
+                f"to {valid_dates.max():%d-%m-%Y}"
+            )
+        else:
+            d2.metric("Valid Dates", "0")
+            st.warning("Koi valid date available nahi hai.")
+
+        st.caption(
+            "Missing / Invalid Dates mein blank dates aur "
+            "date conversion ke baad invalid bani values dono "
+            "include ho sakti hain."
+        )
+    else:
+        st.info("Dataset mein date column identify nahi hui.")
+
+    # Actual column names
+    with st.expander("📋 View Actual Column Names", expanded=False):
+        st.write(df.columns.tolist())
+
+    # Detected columns
+    st.subheader("🔎 Automatically Detected Columns")
+
     st.json({
         "Sales": sales_col,
         "Profit": profit_col,
@@ -392,6 +583,11 @@ with st.expander("🔍 Dataset Structure & Data Quality", expanded=True):
         "Date": date_col,
         "Quantity": quantity_col
     })
+
+    st.caption(
+        "Data quality report loaded DataFrame ka analysis hai. "
+        "Original CSV file ko modify ya overwrite nahi kiya jaata."
+    )
 
 # =====================================================
 # CUSTOM HASH TABLE - ORDER ID SEARCH
@@ -404,9 +600,13 @@ class CustomHashTable:
     """Custom Hash Table using separate chaining."""
 
     def __init__(self, capacity=200003):
+        if not isinstance(capacity, int) or capacity <= 0:
+            raise ValueError("Capacity must be a positive integer.")
+
         self.capacity = capacity
         self.buckets = [[] for _ in range(capacity)]
         self.size = 0
+        self.collisions = 0
 
     def _hash(self, key):
         hash_value = 0
@@ -427,19 +627,39 @@ class CustomHashTable:
                 bucket[i] = (key, value)
                 return
 
+        if bucket:
+            self.collisions += 1
+
         bucket.append((key, value))
         self.size += 1
 
     def search(self, key):
-        bucket = self.buckets[self._hash(str(key))]
+        key = str(key)
+        bucket = self.buckets[self._hash(key)]
 
         for stored_key, value in bucket:
-            if stored_key == str(key):
+            if stored_key == key:
                 return value
 
         return None
 
+    def get_stats(self):
+        non_empty_buckets = sum(
+            1 for bucket in self.buckets if bucket
+        )
 
+        return {
+            "Capacity": self.capacity,
+            "Unique Keys": self.size,
+            "Non-empty Buckets": non_empty_buckets,
+            "Collision Count": self.collisions,
+            "Load Factor": round(
+                self.size / self.capacity, 4
+            )
+        }
+
+
+# Keep this function OUTSIDE the class
 @st.cache_resource
 def build_order_hash_table(order_ids):
     table = CustomHashTable()
@@ -450,14 +670,22 @@ def build_order_hash_table(order_ids):
 
     return table
 
-
 # ---------------- ORDER SEARCH INTERFACE ----------------
 
 st.divider()
 st.header("⚡ DSA Explorer: Hash Table Search")
 
 if order_col:
-    order_ids = df[order_col].astype(str).tolist()
+    order_ids = df[order_col].tolist()
+
+    duplicate_order_ids = int(
+        df[order_col].dropna().duplicated().sum()
+    )
+
+    st.caption(
+        f"Duplicate Order IDs in dataset: {duplicate_order_ids}"
+    )
+
     hash_table = build_order_hash_table(tuple(order_ids))
 
     search_id = st.text_input(
@@ -475,12 +703,12 @@ if order_col:
         start = time.perf_counter()
 
         linear_index = next(
-            (
-                i for i, order_id in enumerate(order_ids)
-                if order_id == search_id
-            ),
-            None
-        )
+    (
+        i for i, order_id in enumerate(order_ids)
+        if pd.notna(order_id) and str(order_id) == search_id
+    ),
+    None
+)
 
         linear_time = time.perf_counter() - start
 
@@ -549,7 +777,11 @@ st.write(
     "on datasets of different sizes."
 )
 
-if st.button("Run Performance Benchmark", key="run_hash_benchmark"):
+if st.button(
+    "Run Performance Benchmark",
+    key="run_hash_benchmark",
+    disabled=order_col is None
+):
 
     import time
 
@@ -710,10 +942,9 @@ if order_col:
         root = None
 
         with st.spinner("Building AVL Tree from Order IDs..."):
-            for index, order_id in enumerate(
-                df[order_col].dropna().astype(str)
-            ):
-                root = avl.insert(root, order_id, index)
+            for index, order_id in enumerate(df[order_col].tolist()):
+                if pd.notna(order_id):
+                    root = avl.insert(root, str(order_id), index)
 
         st.session_state["avl_tree"] = avl
         st.session_state["avl_root"] = root
@@ -767,9 +998,11 @@ st.write(
     "and repeated search operations."
 )
 
-if st.button("Run Hash Table vs AVL Comparison",
-             key="run_hash_avl_comparison"):
-
+if st.button(
+    "Run Hash Table vs AVL Comparison",
+    key="run_hash_avl_comparison",
+    disabled=order_col is None
+):
     import time
     import statistics
 
@@ -979,78 +1212,201 @@ class FibonacciHeap:
             self._add_to_root_list(node)
 
 
+
 # ---------------- INVENTORY PRIORITY DASHBOARD ----------------
 
 st.divider()
 st.header("🌿 DSA Explorer: Fibonacci Heap")
+
 st.write(
-    "Products with the lowest available quantity receive the "
-    "highest priority for restocking."
+    "Explore category-wise and sub-category-wise demand "
+    "using a Fibonacci Heap."
 )
 
 if quantity_col and category_col:
-    if st.button("Build Inventory Priority Queue",
-                 key="build_fib_heap"):
 
-        inventory_heap = FibonacciHeap()
+    group_columns = [category_col]
 
-        inventory_data = df[
-            [category_col, quantity_col]
-        ].copy()
+    if subcategory_col:
+        group_columns.append(subcategory_col)
 
-        inventory_data[quantity_col] = pd.to_numeric(
-            inventory_data[quantity_col], errors="coerce"
+    numeric_cols = [quantity_col]
+
+    if stock_col:
+        numeric_cols.append(stock_col)
+
+    inventory_data = df[
+        list(dict.fromkeys(group_columns + numeric_cols))
+    ].copy()
+
+    for col in numeric_cols:
+        inventory_data[col] = pd.to_numeric(
+            inventory_data[col], errors="coerce"
         )
-        inventory_data = inventory_data.dropna(
-            subset=[quantity_col]
-        )
 
-        for row_index, row in inventory_data.iterrows():
-            inventory_heap.insert(
-                row[quantity_col],
-                {
-                    "row_index": int(row_index),
-                    "product": str(row[category_col]),
-                    "quantity": float(row[quantity_col])
-                }
+    inventory_data = inventory_data.dropna(
+        subset=[category_col, quantity_col]
+    )
+
+    aggregations = {quantity_col: "sum"}
+
+    if stock_col:
+        aggregations[stock_col] = "sum"
+
+    summary = (
+        inventory_data
+        .groupby(
+            group_columns,
+            as_index=False,
+            dropna=False
+        )
+        .agg(aggregations)
+        .rename(columns={
+            quantity_col: "Quantity Sold",
+            **(
+                {stock_col: "Stock Left"}
+                if stock_col else {}
             )
+        })
+    )
 
-        st.session_state["inventory_heap"] = inventory_heap
-        st.success(
-            f"Priority queue built with {inventory_heap.total_nodes:,} records!"
+    st.subheader("📦 Category & Sub-category Breakdown")
+
+    display_cols = group_columns + ["Quantity Sold"]
+
+    if stock_col:
+        display_cols.append("Stock Left")
+
+    st.dataframe(
+        summary[display_cols].sort_values(
+            "Quantity Sold",
+            ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("🏆 Top 10 Priority Items")
+
+    if stock_col:
+        st.caption(
+            "Lower recorded stock gets higher priority. "
+            "Confirm that this column represents actual inventory."
+        )
+    else:
+        st.caption(
+            "Actual stock data was not detected. "
+            "Ranking is based on highest quantity sold."
         )
 
-    if st.button("Show 10 Highest Restocking Priorities",
-                 key="show_fib_priority"):
+    if st.button(
+        "Build Inventory Priority Queue",
+        key="build_fib_heap"
+    ):
+        heap = FibonacciHeap()
 
+        for _, row in summary.iterrows():
+
+            if stock_col and pd.notna(row["Stock Left"]):
+                priority = float(row["Stock Left"])
+                basis = "Low stock"
+            else:
+                priority = -float(row["Quantity Sold"])
+                basis = "High demand"
+
+            item = {
+                "Category": str(row[category_col]),
+                "Quantity Sold": float(row["Quantity Sold"]),
+                "Priority Basis": basis
+            }
+
+            if subcategory_col:
+                item["Sub-category"] = str(
+                    row[subcategory_col]
+                )
+
+            if stock_col:
+                item["Stock Left"] = row["Stock Left"]
+
+            heap.insert(priority, item)
+
+        st.session_state["inventory_heap"] = heap
+        st.success(
+            f"Priority queue built with {heap.total_nodes} items!"
+        )
+
+    if st.button(
+        "Show Top 10 Priorities",
+        key="show_fib_priority"
+    ):
         if "inventory_heap" not in st.session_state:
-            st.warning("Pehle Build Inventory Priority Queue click karo.")
+            st.warning(
+                "Pehle Build Inventory Priority Queue click karo."
+            )
         else:
-            heap = st.session_state["inventory_heap"]
+            # Rebuild the heap so repeated clicks give the same ranking.
+            heap = FibonacciHeap()
+
+            for _, row in summary.iterrows():
+
+                if stock_col and pd.notna(row["Stock Left"]):
+                    priority = float(row["Stock Left"])
+                    basis = "Low stock"
+                else:
+                    priority = -float(row["Quantity Sold"])
+                    basis = "High demand"
+
+                item = {
+                    "Category": str(row[category_col]),
+                    "Quantity Sold": float(row["Quantity Sold"]),
+                    "Priority Basis": basis
+                }
+
+                if subcategory_col:
+                    item["Sub-category"] = str(
+                        row[subcategory_col]
+                    )
+
+                if stock_col:
+                    item["Stock Left"] = row["Stock Left"]
+
+                heap.insert(priority, item)
+
             priorities = []
 
-            for _ in range(min(10, heap.total_nodes)):
+            for rank in range(1, min(10, heap.total_nodes) + 1):
                 result = heap.extract_min()
+
                 if result is None:
                     break
 
-                item, quantity = result
+                item, _ = result
+
                 priorities.append({
-                    "Product / Category": item["product"],
-                    "Quantity": quantity,
-                    "Priority": "High"
+                    "Rank": rank,
+                    **item
                 })
 
-            if priorities:
-                st.dataframe(
-                    pd.DataFrame(priorities),
-                    use_container_width=True
-                )
-            else:
-                st.info("Inventory queue empty hai.")
+            priority_df = pd.DataFrame(priorities)
+
+            st.dataframe(
+                priority_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "📥 Download Priority Results",
+                data=priority_df.to_csv(
+                    index=False
+                ).encode("utf-8"),
+                file_name="retailiq_inventory_priorities.csv",
+                mime="text/csv"
+            )
+
 else:
     st.warning(
-        "Dataset mein Quantity aur Category columns required hain."
+        "Dataset mein Category aur Quantity columns required hain."
     )
 
     # ---------------- FINAL DSA PERFORMANCE LAB ----------------
@@ -1063,7 +1419,11 @@ st.write(
     "using repeated search and priority extraction tests."
 )
 
-if st.button("Run Final DSA Evaluation", key="final_dsa_evaluation"):
+if st.button(
+    "Run Final DSA Evaluation",
+    key="final_dsa_evaluation",
+    disabled=order_col is None
+):
 
     import time
     import statistics
@@ -1131,15 +1491,18 @@ if st.button("Run Final DSA Evaluation", key="final_dsa_evaluation"):
                     (time.perf_counter() - start) * 1000
                 )
 
-            # One minimum extraction test for Fibonacci Heap
+            # Actual minimum extraction test for Fibonacci Heap
+            fib_record_count = fib_eval.total_nodes
             fib_extract_ms = None
-            if fib_eval.total_nodes > 0:
+
+            if fib_record_count > 0:
                 start = time.perf_counter()
-                fib_eval.get_min()
+                fib_eval.extract_min()
                 fib_extract_ms = (
                     time.perf_counter() - start
                 ) * 1000
 
+        # Evaluation table
         evaluation_df = pd.DataFrame([
             {
                 "Data Structure": "Custom Hash Table",
@@ -1161,23 +1524,25 @@ if st.button("Run Final DSA Evaluation", key="final_dsa_evaluation"):
             },
             {
                 "Data Structure": "Fibonacci Heap",
-                "Records": fib_eval.total_nodes,
+                "Records": fib_record_count,
                 "Build Time (ms)": round(fib_build_ms, 3),
-                "Operation Tested": "Minimum Lookup",
-                "Median Operation Time (ms)": round(
-                    fib_extract_ms, 6
-                ) if fib_extract_ms is not None else None
+                "Operation Tested": "Extract Minimum",
+                "Median Operation Time (ms)": (
+                    round(fib_extract_ms, 6)
+                    if fib_extract_ms is not None else None
+                )
             }
         ])
 
         st.success("Evaluation completed!")
         st.dataframe(evaluation_df, use_container_width=True)
+
         st.download_button(
-    label="📥 Download DSA Evaluation Results (CSV)",
-    data=evaluation_df.to_csv(index=False).encode("utf-8"),
-    file_name="retailiq_dsa_evaluation.csv",
-    mime="text/csv"
-)
+            label="📥 Download DSA Evaluation Results (CSV)",
+            data=evaluation_df.to_csv(index=False).encode("utf-8"),
+            file_name="retailiq_dsa_evaluation.csv",
+            mime="text/csv"
+        )
 
         st.subheader("Construction Time Comparison")
         build_chart = evaluation_df.set_index("Data Structure")[
@@ -1187,7 +1552,7 @@ if st.button("Run Final DSA Evaluation", key="final_dsa_evaluation"):
 
         st.caption(
             "Hash Table and AVL Tree use the same Order IDs and search queries. "
-            "Fibonacci Heap is evaluated on minimum lookup, a different operation, "
+            "Fibonacci Heap is evaluated on minimum extraction, a different operation, "
             "so its operation time should not be directly compared with search times. "
             "Build times depend on hardware and dataset order."
         )
