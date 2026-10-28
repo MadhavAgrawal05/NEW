@@ -51,7 +51,7 @@ st.markdown("""
 
 
 
-st.title("📊 SmartRetail: Retail Analytics and DSA-Based Optimization Platform")
+st.title("📊 SmartRetail: Efficient Retail Analytics Using Advanced Data Structures")
 
 # ---------------- LOAD DATASET ----------------
 DATA_FILE = "store_sales_data (2).csv"
